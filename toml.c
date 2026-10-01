@@ -2,7 +2,9 @@
 #include <assert.h>
 #include <ctype.h>
 #include <errno.h>
+#ifndef TOML_NO_FLOAT
 #include <math.h>
+#endif
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -55,8 +57,12 @@ toml_unparsed_t     toml_array_unparsed(const toml_array_t* array, int idx);
 int                 toml_value_string(toml_unparsed_t s, char** ret, int* len);
 int                 toml_value_bool(toml_unparsed_t s, bool* ret);
 int                 toml_value_int(toml_unparsed_t s, int64_t* ret);
+#ifndef TOML_NO_FLOAT
 int                 toml_value_double(toml_unparsed_t s, double* ret);
+#endif
+#ifndef TOML_NO_TIMESTAMP
 int                 toml_value_timestamp(toml_unparsed_t s, toml_timestamp_t* ret);
+#endif
 
 // Convert escape to UTF-8; return #bytes used in buf to encode the char, or -1
 // on error.
@@ -708,15 +714,20 @@ static int parse_inline_table(context_t* ctx, toml_table_t* tbl) {
 }
 
 static int valtype(const char* val) {
+#ifndef TOML_NO_TIMESTAMP
 	toml_timestamp_t ts;
+#endif
 	if (*val == '\'' || *val == '"')
 		return 's';
 	if (toml_value_bool(val, 0) == 0)
 		return 'b';
 	if (toml_value_int(val, 0) == 0)
 		return 'i';
+#ifndef TOML_NO_FLOAT
 	if (toml_value_double(val, 0) == 0)
 		return 'd';
+#endif
+#ifndef TOML_NO_TIMESTAMP
 	if (toml_value_timestamp(val, &ts) == 0) {
 		if (ts.year && ts.hour)
 			return 'T'; /// timestamp
@@ -724,6 +735,7 @@ static int valtype(const char* val) {
 			return 'D'; /// date
 		return 't';     /// time
 	}
+#endif
 	return 'u'; /// unknown
 }
 
@@ -1169,6 +1181,7 @@ fail:
 	return 0;
 }
 
+#ifndef TOML_NO_FILE
 toml_table_t* toml_parse_file(FILE* fp, char* errbuf, int errbufsz) {
 	int   bufsz = 0;
 	char* buf   = 0;
@@ -1219,6 +1232,7 @@ toml_table_t* toml_parse_file(FILE* fp, char* errbuf, int errbufsz) {
 	xfree(buf);
 	return ret;
 }
+#endif // TOML_NO_FILE
 
 static void xfree_kval(toml_keyval_t* p) {
 	if (!p)
@@ -1323,6 +1337,7 @@ static bool scan_time(const char* p, int* hh, int* mm, int* ss) {
 	return (hour >= 0 && minute >= 0);
 }
 
+#ifndef TOML_NO_TIMESTAMP
 static int parse_millisec(const char* p, const char** endp) {
 	int ret  = 0;
 	int unit = 100; /// unit in millisec
@@ -1331,6 +1346,7 @@ static int parse_millisec(const char* p, const char** endp) {
 	*endp = p;
 	return ret;
 }
+#endif
 
 static bool scan_offset(const char* p, int* tz) {
 	int sign   = p[0];
@@ -1665,6 +1681,7 @@ toml_table_t* toml_array_table(const toml_array_t* arr, int idx) {
 	return (0 <= idx && idx < arr->nitem) ? arr->item[idx].tbl : 0;
 }
 
+#ifndef TOML_NO_TIMESTAMP
 bool is_leap(int y) {
 	return y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
 }
@@ -1728,6 +1745,7 @@ int toml_value_timestamp(toml_unparsed_t src_, toml_timestamp_t* ret) {
 		return -1;
 	return 0;
 }
+#endif // TOML_NO_TIMESTAMP
 
 // Raw to boolean
 int toml_value_bool(toml_unparsed_t src, bool* ret_) {
@@ -1822,6 +1840,7 @@ int toml_value_int(toml_unparsed_t src, int64_t* ret_) {
 	return (errno || *endp) ? -1 : 0;
 }
 
+#ifndef TOML_NO_FLOAT
 int toml_value_double(toml_unparsed_t src, double* ret_) {
 	if (!src)
 		return -1;
@@ -1886,6 +1905,7 @@ int toml_value_double(toml_unparsed_t src, double* ret_) {
 		return -1;
 	return 0;
 }
+#endif // TOML_NO_FLOAT
 
 int toml_value_string(toml_unparsed_t src, char** ret, int* len) {
 	bool        multiline = false;
@@ -1955,19 +1975,23 @@ toml_value_t toml_array_int(const toml_array_t* arr, int idx) {
 	return ret;
 }
 
+#ifndef TOML_NO_FLOAT
 toml_value_t toml_array_double(const toml_array_t* arr, int idx) {
 	toml_value_t ret;
 	memset(&ret, 0, sizeof(ret));
 	ret.ok = (toml_value_double(toml_array_unparsed(arr, idx), &ret.u.d) == 0);
 	return ret;
 }
+#endif
 
+#ifndef TOML_NO_TIMESTAMP
 toml_value_t toml_array_timestamp(const toml_array_t* arr, int idx) {
 	toml_value_t ret;
 	memset(&ret, 0, sizeof(ret));
 	ret.ok = (toml_value_timestamp(toml_array_unparsed(arr, idx), &ret.u.ts) == 0);
 	return ret;
 }
+#endif
 
 toml_value_t toml_table_string(const toml_table_t* tbl, const char* key) {
 	toml_value_t ret;
@@ -1976,6 +2000,31 @@ toml_value_t toml_table_string(const toml_table_t* tbl, const char* key) {
 	if (raw)
 		ret.ok = (toml_value_string(raw, &ret.u.s, &ret.u.sl) == 0);
 	return ret;
+}
+
+const char* toml_table_string_ref(const toml_table_t* tbl, const char* key, int* len) {
+	toml_unparsed_t raw = toml_table_unparsed(tbl, key);
+	if (!raw || !len)
+		return 0;
+
+	int n = (int)strlen(raw);
+	if (n < 2 || (raw[0] != '"' && raw[0] != '\'') || raw[n - 1] != raw[0])
+		return 0;
+
+	char* p = (char*)raw + 1;
+	int   m = n - 2;
+	for (int i = 0; i < m; i++)
+		if (p[i] == '\\')
+			return 0;
+
+	/// Terminate in place, overwriting the closing quote, so the result is an
+	/// ordinary C string. The raw text is this parser's own copy of the value
+	/// and nothing else refers to it, but the overwrite does mean this may be
+	/// called only once per key.
+	p[m] = 0;
+
+	*len = m;
+	return p;
 }
 
 toml_value_t toml_table_bool(const toml_table_t* tbl, const char* key) {
@@ -1992,16 +2041,20 @@ toml_value_t toml_table_int(const toml_table_t* tbl, const char* key) {
 	return ret;
 }
 
+#ifndef TOML_NO_FLOAT
 toml_value_t toml_table_double(const toml_table_t* tbl, const char* key) {
 	toml_value_t ret;
 	memset(&ret, 0, sizeof(ret));
 	ret.ok = (toml_value_double(toml_table_unparsed(tbl, key), &ret.u.d) == 0);
 	return ret;
 }
+#endif
 
+#ifndef TOML_NO_TIMESTAMP
 toml_value_t toml_table_timestamp(const toml_table_t* tbl, const char* key) {
 	toml_value_t ret;
 	memset(&ret, 0, sizeof(ret));
 	ret.ok = (toml_value_timestamp(toml_table_unparsed(tbl, key), &ret.u.ts) == 0);
 	return ret;
 }
+#endif

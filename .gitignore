@@ -12,3 +12,4 @@
 /libtoml.so.1.0
 /example/array
 /example/table
+/tests/test_toml
